@@ -131,6 +131,7 @@ func MarshalConfigs(configs ...interface{}) ([]byte, error) {
 	for _, cfg := range configs {
 		data, err := yaml.Marshal(cfg)
 		if err != nil {
+			fmt.Printf("sense: marshal config failed, %v\n", cfg)
 			return nil, err
 		}
 		cfgs = append(cfgs, data)

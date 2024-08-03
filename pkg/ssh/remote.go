@@ -22,6 +22,7 @@ import (
 	"strconv"
 
 	"github.com/labring/sealos/pkg/utils/initsystem"
+	"github.com/labring/sealos/pkg/utils/logger"
 
 	"github.com/labring/sealos/pkg/template"
 
@@ -109,6 +110,7 @@ func (s *Remote) Token(ip, config, certificateKey string) (string, error) {
 }
 
 func (s *Remote) CGroup(ip string) (string, error) {
+	logger.Info("sense: CGroup %v", ip)
 	return s.outputRemoteUtilSubcommand(ip, cGroupCommandFmt)
 }
 
@@ -199,5 +201,6 @@ func (s *Remote) executeRemoteUtilSubcommand(ip, cmd string) error {
 
 func (s *Remote) outputRemoteUtilSubcommand(ip, cmd string) (string, error) {
 	cmd = fmt.Sprintf("%s %s", s.pathResolver.RootFSSealctlPath(), cmd)
+	logger.Info("sense: exec cmd: %v", cmd)
 	return s.execer.CmdToString(ip, cmd, "")
 }

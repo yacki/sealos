@@ -89,11 +89,13 @@ func gte(v1, v2 *semver.Version) bool {
 }
 
 func (k *KubeadmRuntime) getCGroupDriver(node string) (string, error) {
+	logger.Info("sense: entering getCGroupDriver %v", node)
 	driver, err := k.remoteUtil.CGroup(node)
 	if err != nil {
+		logger.Info("sense: remote CGroup err.")
 		return "", err
 	}
-	logger.Debug("get nodes [%s] cgroup driver is [%s]", node, driver)
+	logger.Info("get nodes [%s] cgroup driver is [%s]", node, driver)
 	return driver, nil
 }
 
@@ -104,13 +106,16 @@ var (
 
 // MergeKubeadmConfig Unsafe, dangerous use of goroutines.
 func (k *KubeadmRuntime) MergeKubeadmConfig() error {
+	fmt.Println("sense: merging config...")
 	mergeOnce.Do(func() {
 		mergeErr = func() error {
+			fmt.Printf("sense: merging kubeadm config failed...\n")
 			for _, fn := range []string{
 				"",                          // generate default kubeadm configs
 				k.getDefaultKubeadmConfig(), // merging from predefined path of file if file exists
 			} {
 				if err := k.kubeadmConfig.Merge(fn); err != nil {
+					fmt.Printf("sense: merge k8s config failed, %v\n", fn)
 					return err
 				}
 			}
@@ -120,7 +125,9 @@ func (k *KubeadmRuntime) MergeKubeadmConfig() error {
 					return fmt.Errorf("failed to load kubeadm config from clusterfile: %v", err)
 				}
 			}
+			fmt.Println("sense: setKubeadmAPIVersion")
 			k.setKubeadmAPIVersion()
+			fmt.Println("sense: setFeatureGatesConfiguration")
 			k.setFeatureGatesConfiguration()
 			return k.validateVIP(k.getVip())
 		}()
@@ -129,13 +136,16 @@ func (k *KubeadmRuntime) MergeKubeadmConfig() error {
 }
 
 func (k *KubeadmRuntime) validateVIP(ip string) error {
+	fmt.Printf("sense: validateVIP %v\n", ip)
 	for k, sub := range map[string]string{
 		"podSubnet":     k.kubeadmConfig.ClusterConfiguration.Networking.PodSubnet,
 		"serviceSubnet": k.kubeadmConfig.ClusterConfiguration.Networking.ServiceSubnet,
 	} {
 		if contains, err := iputils.Contains(sub, ip); err != nil {
+			fmt.Printf("sense: validate err %v, %v\n", ip, sub)
 			return err
 		} else if contains {
+			fmt.Printf("sense: validate err %v, %v\n", ip, sub)
 			return fmt.Errorf("ensure IP %s is not in %s range", ip, k)
 		}
 	}
@@ -143,6 +153,8 @@ func (k *KubeadmRuntime) validateVIP(ip string) error {
 }
 
 func (k *KubeadmRuntime) getDefaultKubeadmConfig() string {
+	fmt.Printf("sense: get default kubeadm config: %v, %v\n",
+		k.pathResolver.RootFSEtcPath(), defaultRootfsKubeadmFileName)
 	return filepath.Join(k.pathResolver.RootFSEtcPath(), defaultRootfsKubeadmFileName)
 }
 
@@ -412,35 +424,47 @@ func (k *KubeadmRuntime) setCRISocket(criSocket string) {
 }
 
 var setCGroupDriverAndSocket = func(krt *KubeadmRuntime) error {
+	fmt.Println("sense: setCGroupDriverAndSocket")
 	return krt.setCGroupDriverAndSocket(krt.getMaster0IPAndPort())
 }
 
 var setCertificateKey = func(krt *KubeadmRuntime) error {
+	fmt.Println("sense: entering setCertificateKey")
 	certificateKeyFile := path.Join(krt.pathResolver.EtcPath(), defaultCertificateKeyFileName)
 	var key string
 	if !fileutil.IsExist(certificateKeyFile) {
 		key, _ = rand.CreateCertificateKey()
+		fmt.Printf("sense: writing certificate key file, %v\n", certificateKeyFile)
 		err := fileutil.WriteFile(certificateKeyFile, []byte(key))
 		if err != nil {
+			fmt.Printf("sense: writing cert key file failed, %v, %v\n",
+				certificateKeyFile, key)
 			return err
 		}
 	} else {
 		data, err := fileutil.ReadAll(certificateKeyFile)
+		fmt.Printf("sense: reading cert file, %v\n", certificateKeyFile)
 		if err != nil {
+			fmt.Printf("sense: reading file failed, %v\n", err)
 			return err
 		}
 		key = string(data)
 	}
+	fmt.Printf("sense: set init cert key: %v", key)
 	krt.setInitCertificateKey(key)
 	return nil
 }
 
 func (k *KubeadmRuntime) generateInitConfigs() ([]byte, error) {
+	fmt.Println("sense: generateInitConfigs, v2408031438")
 	if err := k.CompleteKubeadmConfig(setCGroupDriverAndSocket, setCertificateKey); err != nil {
+		fmt.Println("sense: CompleteKubeadmConfig failed")
 		return nil, err
 	}
+	fmt.Println("sense: try ToConvertedKubeadmConfig")
 	conversion, err := k.kubeadmConfig.ToConvertedKubeadmConfig()
 	if err != nil {
+		fmt.Println("sense: ToConvertedKubeadmConfig failed")
 		return nil, err
 	}
 	return yaml.MarshalConfigs(&conversion.InitConfiguration,
@@ -451,22 +475,31 @@ func (k *KubeadmRuntime) generateInitConfigs() ([]byte, error) {
 
 func (k *KubeadmRuntime) CompleteKubeadmConfig(fns ...func(*KubeadmRuntime) error) error {
 	if err := k.MergeKubeadmConfig(); err != nil {
+		fmt.Printf("sense: MergeKubeadmConfig failed, %v\n", err)
 		return err
 	}
+	fmt.Printf("sense: call CompleteKubeadmConfig funcs\n")
 	for _, fn := range fns {
 		if err := fn(k); err != nil {
+			fmt.Println("sense: call func err\n")
 			return err
 		}
 	}
+	fmt.Printf("sense: trying to set init advertise addr\n")
 	k.setInitAdvertiseAddress(k.getMaster0IP())
+	fmt.Printf("sense: trying to set control plane endpoint\n")
 	k.setControlPlaneEndpoint(fmt.Sprintf("%s:%d", k.getAPIServerDomain(), k.getAPIServerPort()))
 	if k.kubeadmConfig.ClusterConfiguration.APIServer.ExtraArgs == nil {
 		k.kubeadmConfig.ClusterConfiguration.APIServer.ExtraArgs = make(map[string]string)
 	}
+	fmt.Printf("sense: trying to set exclude CIDRS\n")
 	k.setExcludeCIDRs()
+	fmt.Printf("sense: trying to init ert SANS\n")
 	k.initCertSANS()
+	fmt.Printf("sense: trying to init taints\n")
 	k.setInitTaints()
 	// after all merging done, set default fields
+	fmt.Printf("sense: trying to set defaults\n")
 	k.kubeadmConfig.SetDefaults()
 
 	return nil
@@ -509,18 +542,26 @@ func (k *KubeadmRuntime) generateJoinMasterConfigs(masterIP string) ([]byte, err
 }
 
 func (k *KubeadmRuntime) setCGroupDriverAndSocket(node string) error {
+	logger.Info("sense: set setCGroupDriverAndSocket")
+	fmt.Println("sense: setCGroupDriverAndSocket")
 	criSocket, err := k.getCRISocket(node)
 	if err != nil {
+		fmt.Printf("sense: get cri socket err %v\n", node)
 		return err
 	}
-	logger.Debug("node: %s , criSocket: %s", node, criSocket)
+	logger.Info("sense: node: %s , criSocket: %s", node, criSocket)
+	logger.Info("sense: setCRISocket")
 	k.setCRISocket(criSocket)
+	logger.Info("sense: setImageSocket")
 	k.setImageSocket()
+	logger.Info("sense: getCGroupDriver...")
 	cGroupDriver, err := k.getCGroupDriver(node)
 	if err != nil {
+		logger.Warn("sense: getCGroupDriver err!")
 		return err
 	}
 	logger.Debug("node: %s , cGroupDriver: %s", node, cGroupDriver)
+	logger.Info("sense: setCgroupDriver")
 	k.setCgroupDriver(cGroupDriver)
 	return nil
 }

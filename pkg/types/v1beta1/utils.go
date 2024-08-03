@@ -17,6 +17,8 @@ limitations under the License.
 package v1beta1
 
 import (
+	"fmt"
+
 	"github.com/Masterminds/semver/v3"
 	"golang.org/x/exp/slices"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -81,6 +83,7 @@ func (c *Cluster) GetMaster0IPAndPort() string {
 				if len(host.IPS) == 0 {
 					return ""
 				}
+				fmt.Printf("sense: hostIP %v\n", host.IPS[0])
 				return host.IPS[0]
 			}
 		}
